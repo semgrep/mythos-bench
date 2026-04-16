@@ -1,0 +1,12 @@
+[project]
+name = "mythos-bench"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.14"
+dependencies = [
+    "httpx>=0.28.1",
+    "openai>=2.31.0",
+    "python-dotenv>=1.2.2",
+    "rich>=15.0.0",
+    "tqdm>=4.67.3",
+]
