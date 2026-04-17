@@ -393,7 +393,11 @@ func writeManifest(path, runID string, models []string, n, concurrency, timeoutF
 		fns := extracted[tc.Name]
 		var fnList []ManifestFn
 		for _, fn := range fns {
-			fnList = append(fnList, ManifestFn{fn.Name, fn.StartLine, fn.EndLine})
+			fnList = append(fnList, ManifestFn{
+				Name:      fn.Name,
+				StartLine: fn.StartLine,
+				EndLine:   fn.EndLine,
+			})
 		}
 		tcManifests = append(tcManifests, ManifestTC{
 			Name:                tc.Name,
@@ -481,11 +485,6 @@ func writeConclusions(path, runID string, results []CallResult,
 			fnIndex[tc.Name][fn.Name] = fn
 		}
 	}
-	tcIndex := map[string]TestCase{}
-	for _, tc := range selectedCases {
-		tcIndex[tc.Name] = tc
-	}
-
 	// grouped[tc][taskKey][model] → []CallResult
 	type key struct{ tc, task, model string }
 	grouped := map[key][]CallResult{}
@@ -509,7 +508,6 @@ func writeConclusions(path, runID string, results []CallResult,
 	}
 
 	for k, records := range grouped {
-		tc := tcIndex[k.tc]
 		concl := tcConcl[k.tc]
 
 		// get or create task entry
@@ -527,8 +525,6 @@ func writeConclusions(path, runID string, results []CallResult,
 				}
 			}
 		}
-		_ = tc
-
 		var responses []string
 		errCount := 0
 		for _, r := range records {
@@ -815,7 +811,9 @@ func main() {
 	listCases := flag.Bool("list-cases", false, "print test cases and exit")
 	flag.Parse()
 
-	allModels := append(flagshipModels, ossModels...)
+	allModels := make([]string, 0, len(flagshipModels)+len(ossModels))
+	allModels = append(allModels, flagshipModels...)
+	allModels = append(allModels, ossModels...)
 
 	if *listModels {
 		fmt.Println("Flagship models:")
@@ -882,7 +880,9 @@ func main() {
 
 	// Output path
 	resultsDir := filepath.Join(filepath.Dir(mustExePath()), "results")
-	os.MkdirAll(resultsDir, 0755)
+	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+		die("failed to create results directory: %v", err)
+	}
 	runID := time.Now().Format("20060102_150405")
 	outputPath := *outputFlag
 	if outputPath == "" {
@@ -1082,29 +1082,30 @@ func main() {
 			text, latency, runErr := runClaudeCode(ctx, prompt, w.Model, apiKey)
 
 			latS := latency.Seconds()
-			var r CallResult
+			r := CallResult{
+				Timestamp:         ts,
+				TestCase:          w.TC.Name,
+				Model:             w.Model,
+				Iteration:         w.Iteration,
+				TaskType:          taskType(w),
+				SourceURL:         w.TC.SourceURL,
+				FunctionName:      fnName(w),
+				FunctionStartLine: fnStart(w),
+				FunctionEndLine:   fnEnd(w),
+				CodeTested:        codeTested(w),
+				ExpectedFinding:   w.TC.Expected,
+				LatencyS:          f64Ptr(latS),
+			}
 			if runErr != nil {
 				errStr := runErr.Error()
-				r = CallResult{
-					Timestamp: ts, TestCase: w.TC.Name, Model: w.Model,
-					Iteration: w.Iteration, TaskType: taskType(w),
-					SourceURL: w.TC.SourceURL, FunctionName: fnName(w),
-					FunctionStartLine: fnStart(w), FunctionEndLine: fnEnd(w),
-					CodeTested: codeTested(w), ExpectedFinding: w.TC.Expected,
-					LatencyS: f64Ptr(latS), Error: &errStr,
-				}
+				r.Error = &errStr
 			} else {
-				r = CallResult{
-					Timestamp: ts, TestCase: w.TC.Name, Model: w.Model,
-					Iteration: w.Iteration, TaskType: taskType(w),
-					SourceURL: w.TC.SourceURL, FunctionName: fnName(w),
-					FunctionStartLine: fnStart(w), FunctionEndLine: fnEnd(w),
-					CodeTested: codeTested(w), ExpectedFinding: w.TC.Expected,
-					Response: &text, LatencyS: f64Ptr(latS),
-				}
+				r.Response = &text
 			}
 
-			rw.Write(r)
+			if err := rw.Write(r); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to write result: %v\n", err)
+			}
 			mu.Lock()
 			results = append(results, r)
 			mu.Unlock()
@@ -1203,20 +1204,6 @@ func mustExePath() string {
 		return "."
 	}
 	return p
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 func printSummary(results []CallResult) {

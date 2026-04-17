@@ -33,7 +33,8 @@ import os
 import re
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from collections import defaultdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -41,9 +42,6 @@ from typing import Optional
 import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-
-# Load .env from the directory containing this script (before any os.environ reads)
-load_dotenv(Path(__file__).parent / ".env")
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -55,6 +53,8 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+
+load_dotenv(Path(__file__).parent / ".env")
 
 # ── Models ────────────────────────────────────────────────────────────────────
 # OpenRouter model IDs as of April 2026.
@@ -637,8 +637,6 @@ def write_conclusions(
         against expected_finding to score detection rates.
       - code_tested is embedded per-task so the evaluator has the exact code.
     """
-    from collections import defaultdict
-
     # fn_code_index: {test_case: {fn_name: fn_dict}}
     fn_index: dict[str, dict[str, dict]] = {
         tc["name"]: {fn["name"]: fn for fn in extracted.get(tc["name"], [])}
@@ -711,7 +709,6 @@ def print_summary(results: list[CallResult], console: Console) -> None:
     table.add_column("Avg Latency", justify="right")
 
     # Group by (test_case, model, task_type)
-    from collections import defaultdict
     groups: dict = defaultdict(list)
     for r in results:
         key = (r.test_case, r.model, r.task_type)
@@ -842,7 +839,7 @@ async def main_async(args: argparse.Namespace, console: Console) -> int:
     else:
         output_path = results_dir / f"{run_id}.jsonl"
 
-    console.print(f"\n[bold cyan]Mythos Jagged Frontier Benchmark Harness[/bold cyan]")
+    console.print("\n[bold cyan]Mythos Jagged Frontier Benchmark Harness[/bold cyan]")
     console.print(f"  Run ID:      {run_id}")
     console.print(f"  Models:      {', '.join(m.split('/')[-1] for m in models)}")
     console.print(f"  Test cases:  {', '.join(tc['name'] for tc in selected_cases)}")
@@ -851,7 +848,7 @@ async def main_async(args: argparse.Namespace, console: Console) -> int:
     console.print(f"  Results:     {output_path}")
     console.print(f"  Manifest:    {output_path.parent / (output_path.stem + '_manifest.json')}")
     if args.dry_run:
-        console.print(f"  [yellow]DRY RUN — no API calls will be made[/yellow]")
+        console.print("  [yellow]DRY RUN — no API calls will be made[/yellow]")
     console.print()
 
     # Fetch all source files
